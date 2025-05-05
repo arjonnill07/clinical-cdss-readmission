@@ -328,14 +328,52 @@ def get_explanation(X: pd.DataFrame) -> Dict[str, float]:
         logger.error(f"Error generating explanation: {e}")
         return {}
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Root endpoint."""
-    return {
-        "message": "Clinical CDSS Readmission Prediction API",
-        "version": "1.0.0",
-        "status": "active"
-    }
+    """Root endpoint that serves the frontend."""
+    try:
+        # Path to the index.html file
+        frontend_path = Path('frontend/index.html')
+
+        if frontend_path.exists():
+            with open(frontend_path, 'r') as f:
+                html_content = f.read()
+            return HTMLResponse(content=html_content)
+        else:
+            # Fallback if the file doesn't exist
+            return HTMLResponse(content="""
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <title>Clinical CDSS Readmission Prediction</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; line-height: 1.6; }
+                        .container { max-width: 800px; margin: 0 auto; }
+                        h1 { color: #0066cc; }
+                        .card { border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+                        .btn { display: inline-block; background: #0066cc; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>Clinical CDSS Readmission Prediction</h1>
+                        <div class="card">
+                            <h2>Welcome to the API</h2>
+                            <p>This is the API for the Clinical Decision Support System for predicting patient readmissions.</p>
+                            <p>The frontend is currently being built. You can access the API documentation at <a href="/docs">/docs</a>.</p>
+                            <a href="/docs" class="btn">API Documentation</a>
+                        </div>
+                    </div>
+                </body>
+            </html>
+            """)
+    except Exception as e:
+        logger.error(f"Error serving frontend: {e}")
+        return {
+            "message": "Clinical CDSS Readmission Prediction API",
+            "version": "1.0.0",
+            "status": "active"
+        }
 
 @app.get("/health")
 async def health_check():
