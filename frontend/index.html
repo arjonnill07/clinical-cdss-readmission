@@ -228,43 +228,81 @@
         document.addEventListener('DOMContentLoaded', function() {
             const patientForm = document.getElementById('patient-form');
             const predictionCard = document.getElementById('prediction-card');
-            
-            patientForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                
-                // In a real application, you would send the form data to the API
-                // and display the results. For this demo, we'll just show the prediction card.
-                predictionCard.style.display = 'block';
-                
-                // Scroll to the prediction card
-                predictionCard.scrollIntoView({ behavior: 'smooth' });
-                
-                // Create a simple feature importance chart
+            const apiUrl = 'http://localhost:8000';
+
+            // Function to update the UI with prediction results
+            function updatePredictionUI(prediction) {
+                // Update risk percentage and level
+                const riskPercentage = Math.round(prediction.readmission_risk * 100);
+                document.getElementById('risk-percentage').textContent = `${riskPercentage}%`;
+                document.getElementById('risk-level').textContent = prediction.risk_level + ' Risk';
+
+                // Update risk color
+                const riskElement = document.getElementById('risk-percentage');
+                const riskLevelElement = document.getElementById('risk-level');
+
+                // Remove existing risk classes
+                riskElement.classList.remove('risk-high', 'risk-medium', 'risk-low');
+                riskLevelElement.classList.remove('risk-high', 'risk-medium', 'risk-low');
+
+                // Add appropriate risk class
+                const riskClass = `risk-${prediction.risk_level.toLowerCase()}`;
+                riskElement.classList.add(riskClass);
+                riskLevelElement.classList.add(riskClass);
+
+                // Update recommendation based on risk level
+                let recommendation = '';
+                if (prediction.risk_level === 'High') {
+                    recommendation = 'Schedule follow-up within 7 days. Consider care coordination and medication reconciliation.';
+                } else if (prediction.risk_level === 'Medium') {
+                    recommendation = 'Consider follow-up appointment within 2 weeks and medication review.';
+                } else {
+                    recommendation = 'Routine follow-up as needed. Provide patient education on managing diabetes.';
+                }
+                document.getElementById('recommendation').textContent = recommendation;
+
+                // Update model version and date
+                document.getElementById('model-version').textContent = prediction.model_version;
+                document.getElementById('prediction-date').textContent = new Date().toLocaleDateString();
+
+                // Create feature importance chart
                 const ctx = document.createElement('canvas');
                 document.getElementById('feature-importance').innerHTML = '';
                 document.getElementById('feature-importance').appendChild(ctx);
-                
+
+                // Extract feature importance from prediction
+                const features = Object.keys(prediction.explanation);
+                const importanceValues = Object.values(prediction.explanation);
+
+                // Sort features by importance
+                const sortedIndices = importanceValues.map((value, index) => ({ value: Math.abs(value), index }))
+                    .sort((a, b) => b.value - a.value)
+                    .map(item => item.index);
+
+                const sortedFeatures = sortedIndices.map(index => features[index]);
+                const sortedValues = sortedIndices.map(index => importanceValues[index]);
+
+                // Take top 5 features
+                const topFeatures = sortedFeatures.slice(0, 5);
+                const topValues = sortedValues.slice(0, 5);
+
+                // Generate colors based on values (positive = blue, negative = red)
+                const backgroundColors = topValues.map(value =>
+                    value >= 0 ? 'rgba(54, 162, 235, 0.7)' : 'rgba(255, 99, 132, 0.7)'
+                );
+                const borderColors = topValues.map(value =>
+                    value >= 0 ? 'rgba(54, 162, 235, 1)' : 'rgba(255, 99, 132, 1)'
+                );
+
                 new Chart(ctx, {
                     type: 'bar',
                     data: {
-                        labels: ['Glucose Level', 'Age', 'Number of Medications', 'Length of Stay', 'Number of Diagnoses'],
+                        labels: topFeatures.map(feature => feature.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()),
                         datasets: [{
                             label: 'Feature Importance',
-                            data: [0.35, 0.25, 0.20, 0.15, 0.05],
-                            backgroundColor: [
-                                'rgba(255, 99, 132, 0.7)',
-                                'rgba(54, 162, 235, 0.7)',
-                                'rgba(255, 206, 86, 0.7)',
-                                'rgba(75, 192, 192, 0.7)',
-                                'rgba(153, 102, 255, 0.7)'
-                            ],
-                            borderColor: [
-                                'rgba(255, 99, 132, 1)',
-                                'rgba(54, 162, 235, 1)',
-                                'rgba(255, 206, 86, 1)',
-                                'rgba(75, 192, 192, 1)',
-                                'rgba(153, 102, 255, 1)'
-                            ],
+                            data: topValues.map(Math.abs),
+                            backgroundColor: backgroundColors,
+                            borderColor: borderColors,
                             borderWidth: 1
                         }]
                     },
@@ -277,10 +315,86 @@
                         }
                     }
                 });
-                
-                // Update prediction date
-                document.getElementById('prediction-date').textContent = new Date().toLocaleDateString();
+
+                // Show the prediction card
+                predictionCard.style.display = 'block';
+
+                // Scroll to the prediction card
+                predictionCard.scrollIntoView({ behavior: 'smooth' });
+            }
+
+            // Handle form submission
+            patientForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                try {
+                    // Show loading state
+                    const submitButton = this.querySelector('button[type="submit"]');
+                    const originalButtonText = submitButton.textContent;
+                    submitButton.textContent = 'Processing...';
+                    submitButton.disabled = true;
+
+                    // Gather form data
+                    const formData = {
+                        age: parseInt(document.getElementById('age').value),
+                        gender: document.getElementById('gender').value,
+                        time_in_hospital: parseInt(document.getElementById('time_in_hospital').value),
+                        num_medications: parseInt(document.getElementById('num_medications').value),
+                        num_procedures: parseInt(document.getElementById('num_procedures').value),
+                        num_diagnoses: parseInt(document.getElementById('num_diagnoses').value),
+                        glucose_level: parseFloat(document.getElementById('glucose_level').value),
+                        insulin: document.getElementById('insulin').checked,
+                        clinical_notes: document.getElementById('clinical_notes').value
+                    };
+
+                    // Add A1C level if provided
+                    const a1cLevel = document.getElementById('a1c_level').value;
+                    if (a1cLevel) {
+                        formData.A1C_level = parseFloat(a1cLevel);
+                    }
+
+                    console.log('Sending data to API:', formData);
+
+                    // Send data to API
+                    const response = await fetch(`${apiUrl}/predict`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(formData)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API error: ${response.status}`);
+                    }
+
+                    const prediction = await response.json();
+                    console.log('Received prediction:', prediction);
+
+                    // Update UI with prediction results
+                    updatePredictionUI(prediction);
+                } catch (error) {
+                    console.error('Error making prediction:', error);
+                    alert(`Error making prediction: ${error.message}`);
+                } finally {
+                    // Restore button state
+                    const submitButton = this.querySelector('button[type="submit"]');
+                    submitButton.textContent = originalButtonText;
+                    submitButton.disabled = false;
+                }
             });
+
+            // For demo purposes, pre-fill the form with sample data
+            document.getElementById('age').value = 65;
+            document.getElementById('gender').value = 'Male';
+            document.getElementById('time_in_hospital').value = 5;
+            document.getElementById('num_medications').value = 10;
+            document.getElementById('num_procedures').value = 3;
+            document.getElementById('num_diagnoses').value = 7;
+            document.getElementById('glucose_level').value = 180;
+            document.getElementById('a1c_level').value = 7.5;
+            document.getElementById('insulin').checked = true;
+            document.getElementById('clinical_notes').value = 'Patient has type 2 diabetes with poor glucose control.';
         });
     </script>
 </body>
