@@ -48,6 +48,49 @@
             color: #198754;
             font-weight: bold;
         }
+        .prediction-history-item {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+        .prediction-history-item:hover {
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .prediction-history-item .risk-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .prediction-history-item .risk-high {
+            background-color: #dc3545;
+        }
+        .prediction-history-item .risk-medium {
+            background-color: #fd7e14;
+        }
+        .prediction-history-item .risk-low {
+            background-color: #198754;
+        }
+        .prediction-history-item .patient-info {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        .prediction-history-item .actions {
+            margin-top: 10px;
+        }
+        .comparison-view {
+            display: flex;
+            overflow-x: auto;
+            gap: 15px;
+            padding: 15px 0;
+        }
+        .comparison-card {
+            min-width: 250px;
+            flex: 0 0 auto;
+        }
     </style>
 </head>
 <body>
@@ -161,7 +204,10 @@
                                 <textarea class="form-control" id="clinical_notes" rows="3" placeholder="Enter any relevant clinical notes about the patient's condition"></textarea>
                                 <div class="form-text">Include relevant information about diabetes management, complications, or other factors that may affect readmission risk</div>
                             </div>
-                            <button type="submit" class="btn btn-primary">Predict Readmission Risk</button>
+                            <div class="d-flex justify-content-between">
+                                <button type="submit" class="btn btn-primary">Predict Readmission Risk</button>
+                                <button type="button" id="clear-form" class="btn btn-outline-secondary">Clear Form</button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -170,8 +216,9 @@
             <!-- Prediction Results -->
             <div class="col-md-6">
                 <div class="card prediction-card mb-4" id="prediction-card" style="display: none;">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="card-title mb-0">Prediction Results</h5>
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Current Prediction</h5>
+                        <button id="save-prediction" class="btn btn-sm btn-light">Save to History</button>
                     </div>
                     <div class="card-body">
                         <div class="text-center mb-4">
@@ -192,6 +239,20 @@
                     </div>
                     <div class="card-footer text-muted">
                         <small>Prediction made on <span id="prediction-date">May 5, 2025</span> using model version <span id="model-version">gradient_boosting</span></small>
+                    </div>
+                </div>
+
+                <!-- Prediction History -->
+                <div class="card mb-4" id="prediction-history-card" style="display: none;">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Prediction History</h5>
+                        <button id="clear-history" class="btn btn-sm btn-light">Clear History</button>
+                    </div>
+                    <div class="card-body">
+                        <div id="prediction-history" class="prediction-history">
+                            <!-- Prediction history will be inserted here -->
+                            <p class="text-center text-muted" id="no-history-message">No predictions saved yet.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -252,6 +313,12 @@
         document.addEventListener('DOMContentLoaded', function() {
             const patientForm = document.getElementById('patient-form');
             const predictionCard = document.getElementById('prediction-card');
+            const predictionHistoryCard = document.getElementById('prediction-history-card');
+            const predictionHistory = document.getElementById('prediction-history');
+            const noHistoryMessage = document.getElementById('no-history-message');
+            const clearFormButton = document.getElementById('clear-form');
+            const savePredictionButton = document.getElementById('save-prediction');
+            const clearHistoryButton = document.getElementById('clear-history');
 
             // Get API URL from environment or use default
             // This allows the frontend to work in different environments (local, Render, etc.)
@@ -260,8 +327,15 @@
             // Log the API URL for debugging
             console.log('Using API URL:', apiUrl);
 
+            // Store current prediction and history
+            let currentPrediction = null;
+            let predictionHistoryList = [];
+
             // Function to update the UI with prediction results
             function updatePredictionUI(prediction) {
+                // Store the current prediction
+                currentPrediction = prediction;
+
                 // Update risk percentage and level
                 const riskPercentage = Math.round(prediction.readmission_risk * 100);
                 document.getElementById('risk-percentage').textContent = `${riskPercentage}%`;
@@ -353,6 +427,226 @@
                 predictionCard.scrollIntoView({ behavior: 'smooth' });
             }
 
+            // Function to get form data
+            function getFormData() {
+                const formData = {
+                    age: parseInt(document.getElementById('age').value),
+                    gender: document.getElementById('gender').value,
+                    time_in_hospital: parseInt(document.getElementById('time_in_hospital').value),
+                    num_medications: parseInt(document.getElementById('num_medications').value),
+                    num_procedures: parseInt(document.getElementById('num_procedures').value),
+                    num_diagnoses: parseInt(document.getElementById('num_diagnoses').value),
+                    glucose_level: parseFloat(document.getElementById('glucose_level').value),
+                    insulin: document.getElementById('insulin').checked,
+                    clinical_notes: document.getElementById('clinical_notes').value
+                };
+
+                // Add A1C level if provided
+                const a1cLevel = document.getElementById('a1c_level').value;
+                if (a1cLevel) {
+                    formData.A1C_level = parseFloat(a1cLevel);
+                }
+
+                return formData;
+            }
+
+            // Function to save prediction to history
+            function savePredictionToHistory() {
+                if (!currentPrediction) return;
+
+                // Get form data to save with prediction
+                const patientData = getFormData();
+
+                // Create history item with prediction and patient data
+                const historyItem = {
+                    prediction: currentPrediction,
+                    patientData: patientData,
+                    timestamp: new Date().toISOString()
+                };
+
+                // Add to history list
+                predictionHistoryList.unshift(historyItem);
+
+                // Update history UI
+                updateHistoryUI();
+
+                // Show history card
+                predictionHistoryCard.style.display = 'block';
+            }
+
+            // Function to update history UI
+            function updateHistoryUI() {
+                // Clear history container
+                predictionHistory.innerHTML = '';
+
+                // Show/hide no history message
+                if (predictionHistoryList.length === 0) {
+                    noHistoryMessage.style.display = 'block';
+                    return;
+                } else {
+                    noHistoryMessage.style.display = 'none';
+                }
+
+                // Add history items
+                predictionHistoryList.forEach((item, index) => {
+                    const prediction = item.prediction;
+                    const patientData = item.patientData;
+                    const riskLevel = prediction.risk_level.toLowerCase();
+                    const riskPercentage = Math.round(prediction.readmission_risk * 100);
+
+                    const historyItemElement = document.createElement('div');
+                    historyItemElement.className = 'prediction-history-item';
+                    historyItemElement.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="risk-indicator risk-${riskLevel}"></span>
+                                <strong>${prediction.risk_level} Risk (${riskPercentage}%)</strong>
+                            </div>
+                            <small>${new Date(item.timestamp).toLocaleString()}</small>
+                        </div>
+                        <div class="patient-info mt-2">
+                            <div>Patient: ${patientData.age}y/o ${patientData.gender}</div>
+                            <div>Stay: ${patientData.time_in_hospital} days, Meds: ${patientData.num_medications}, Procedures: ${patientData.num_procedures}</div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn btn-sm btn-outline-primary view-details-btn" data-index="${index}">View Details</button>
+                            <button class="btn btn-sm btn-outline-danger remove-btn" data-index="${index}">Remove</button>
+                        </div>
+                    `;
+
+                    predictionHistory.appendChild(historyItemElement);
+                });
+
+                // Add event listeners to buttons
+                document.querySelectorAll('.view-details-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const index = parseInt(this.getAttribute('data-index'));
+                        const item = predictionHistoryList[index];
+
+                        // Fill form with patient data
+                        fillFormWithPatientData(item.patientData);
+
+                        // Update prediction UI
+                        updatePredictionUI(item.prediction);
+                    });
+                });
+
+                document.querySelectorAll('.remove-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const index = parseInt(this.getAttribute('data-index'));
+                        predictionHistoryList.splice(index, 1);
+                        updateHistoryUI();
+                    });
+                });
+
+                // Add comparison button if there are multiple predictions
+                if (predictionHistoryList.length > 1) {
+                    const compareButton = document.createElement('button');
+                    compareButton.className = 'btn btn-primary mt-3 w-100';
+                    compareButton.textContent = 'Compare Predictions';
+                    compareButton.addEventListener('click', showComparisonView);
+                    predictionHistory.appendChild(compareButton);
+                }
+            }
+
+            // Function to fill form with patient data
+            function fillFormWithPatientData(patientData) {
+                document.getElementById('age').value = patientData.age;
+                document.getElementById('gender').value = patientData.gender;
+                document.getElementById('time_in_hospital').value = patientData.time_in_hospital;
+                document.getElementById('num_medications').value = patientData.num_medications;
+                document.getElementById('num_procedures').value = patientData.num_procedures;
+                document.getElementById('num_diagnoses').value = patientData.num_diagnoses;
+                document.getElementById('glucose_level').value = patientData.glucose_level;
+                document.getElementById('insulin').checked = patientData.insulin;
+                document.getElementById('clinical_notes').value = patientData.clinical_notes;
+
+                if (patientData.A1C_level) {
+                    document.getElementById('a1c_level').value = patientData.A1C_level;
+                } else {
+                    document.getElementById('a1c_level').value = '';
+                }
+            }
+
+            // Function to clear form
+            function clearForm() {
+                patientForm.reset();
+            }
+
+            // Function to show comparison view
+            function showComparisonView() {
+                // Create modal for comparison
+                const modal = document.createElement('div');
+                modal.className = 'modal fade';
+                modal.id = 'comparisonModal';
+                modal.setAttribute('tabindex', '-1');
+                modal.setAttribute('aria-labelledby', 'comparisonModalLabel');
+                modal.setAttribute('aria-hidden', 'true');
+
+                // Create modal content
+                modal.innerHTML = `
+                    <div class="modal-dialog modal-xl">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="comparisonModalLabel">Prediction Comparison</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="comparison-view" id="comparison-container"></div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Add modal to document
+                document.body.appendChild(modal);
+
+                // Create comparison cards
+                const comparisonContainer = modal.querySelector('#comparison-container');
+
+                predictionHistoryList.forEach(item => {
+                    const prediction = item.prediction;
+                    const patientData = item.patientData;
+                    const riskLevel = prediction.risk_level.toLowerCase();
+                    const riskPercentage = Math.round(prediction.readmission_risk * 100);
+
+                    const card = document.createElement('div');
+                    card.className = 'card comparison-card';
+                    card.innerHTML = `
+                        <div class="card-header bg-${riskLevel === 'high' ? 'danger' : riskLevel === 'medium' ? 'warning' : 'success'} text-white">
+                            <h6 class="mb-0">${riskPercentage}% Risk</h6>
+                        </div>
+                        <div class="card-body">
+                            <p><strong>Patient:</strong> ${patientData.age}y/o ${patientData.gender}</p>
+                            <p><strong>Stay:</strong> ${patientData.time_in_hospital} days</p>
+                            <p><strong>Medications:</strong> ${patientData.num_medications}</p>
+                            <p><strong>Procedures:</strong> ${patientData.num_procedures}</p>
+                            <p><strong>Diagnoses:</strong> ${patientData.num_diagnoses}</p>
+                            <p><strong>Glucose:</strong> ${patientData.glucose_level} mg/dL</p>
+                            ${patientData.A1C_level ? `<p><strong>A1C:</strong> ${patientData.A1C_level}%</p>` : ''}
+                            <p><strong>Insulin:</strong> ${patientData.insulin ? 'Yes' : 'No'}</p>
+                        </div>
+                        <div class="card-footer text-muted">
+                            <small>${new Date(item.timestamp).toLocaleString()}</small>
+                        </div>
+                    `;
+
+                    comparisonContainer.appendChild(card);
+                });
+
+                // Show modal
+                const bsModal = new bootstrap.Modal(modal);
+                bsModal.show();
+
+                // Add event listener to remove modal when hidden
+                modal.addEventListener('hidden.bs.modal', function() {
+                    document.body.removeChild(modal);
+                });
+            }
+
             // Handle form submission
             patientForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
@@ -365,24 +659,7 @@
                     submitButton.disabled = true;
 
                     // Gather form data
-                    const formData = {
-                        age: parseInt(document.getElementById('age').value),
-                        gender: document.getElementById('gender').value,
-                        time_in_hospital: parseInt(document.getElementById('time_in_hospital').value),
-                        num_medications: parseInt(document.getElementById('num_medications').value),
-                        num_procedures: parseInt(document.getElementById('num_procedures').value),
-                        num_diagnoses: parseInt(document.getElementById('num_diagnoses').value),
-                        glucose_level: parseFloat(document.getElementById('glucose_level').value),
-                        insulin: document.getElementById('insulin').checked,
-                        clinical_notes: document.getElementById('clinical_notes').value
-                    };
-
-                    // Add A1C level if provided
-                    const a1cLevel = document.getElementById('a1c_level').value;
-                    if (a1cLevel) {
-                        formData.A1C_level = parseFloat(a1cLevel);
-                    }
-
+                    const formData = getFormData();
                     console.log('Sending data to API:', formData);
 
                     // Send data to API
@@ -412,6 +689,16 @@
                     submitButton.textContent = originalButtonText;
                     submitButton.disabled = false;
                 }
+            });
+
+            // Event listeners for buttons
+            clearFormButton.addEventListener('click', clearForm);
+
+            savePredictionButton.addEventListener('click', savePredictionToHistory);
+
+            clearHistoryButton.addEventListener('click', function() {
+                predictionHistoryList = [];
+                updateHistoryUI();
             });
 
             // For demo purposes, pre-fill the form with sample data
