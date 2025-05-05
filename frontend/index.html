@@ -252,7 +252,13 @@
         document.addEventListener('DOMContentLoaded', function() {
             const patientForm = document.getElementById('patient-form');
             const predictionCard = document.getElementById('prediction-card');
-            const apiUrl = 'http://localhost:8000';
+
+            // Get API URL from environment or use default
+            // This allows the frontend to work in different environments (local, Render, etc.)
+            const apiUrl = window.API_URL || 'http://localhost:8000';
+
+            // Log the API URL for debugging
+            console.log('Using API URL:', apiUrl);
 
             // Function to update the UI with prediction results
             function updatePredictionUI(prediction) {

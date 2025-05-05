@@ -10,6 +10,10 @@ COPY frontend/assets/ /usr/share/nginx/html/assets/
 # Copy nginx configuration template
 COPY nginx.render.conf /etc/nginx/templates/default.conf.template
 
+# Copy environment injection script
+COPY frontend/inject-env.sh /docker-entrypoint.d/40-inject-env.sh
+RUN chmod +x /docker-entrypoint.d/40-inject-env.sh
+
 # Expose port (Render will set this automatically)
 EXPOSE 80
 
