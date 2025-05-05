@@ -64,7 +64,7 @@ app.add_middleware(
 class PatientFeatures(BaseModel):
     """
     Model for patient features input.
-    
+
     This is a simplified example. In a real-world scenario,
     you would have more specific fields based on your data.
     """
@@ -78,9 +78,9 @@ class PatientFeatures(BaseModel):
     A1C_level: Optional[float] = Field(None, description="HbA1c level")
     insulin: bool = Field(..., description="Whether insulin was prescribed")
     clinical_notes: Optional[str] = Field(None, description="Clinical notes text")
-    
+
     # Additional fields can be added based on your model's requirements
-    
+
     @validator('gender')
     def validate_gender(cls, v):
         allowed_values = ['Male', 'Female', 'Other']
@@ -108,30 +108,30 @@ explainer = None
 async def startup_event():
     """Load model and related objects on startup."""
     global model, model_info, feature_names, explainer
-    
+
     try:
         # Load model
         logger.info("Loading model")
         model_path = MODELS_DIR / 'model.pkl'
         with open(model_path, 'rb') as f:
             model = pickle.load(f)
-        
+
         # Load model info
         info_path = MODELS_DIR / 'model_info.json'
         with open(info_path, 'r') as f:
             model_info = json.load(f)
-        
+
         feature_names = model_info.get('feature_names', [])
-        
+
         # Load SHAP explainer
         try:
             logger.info("Loading SHAP explainer")
             with open(MODELS_DIR / 'shap_values.pkl', 'rb') as f:
                 shap_data = pickle.load(f)
-            
+
             # Create a sample of the data for the explainer
             X_sample = shap_data['X_sample']
-            
+
             # Create SHAP explainer based on model type
             if hasattr(model, 'predict_proba'):
                 # For tree-based models
@@ -140,20 +140,20 @@ async def startup_event():
                 else:
                     # For other models
                     explainer = shap.KernelExplainer(
-                        model.predict_proba, 
+                        model.predict_proba,
                         shap.sample(X_sample, 100),
                         link="logit"
                     )
             else:
                 explainer = shap.KernelExplainer(model.predict, shap.sample(X_sample, 100))
-            
+
             logger.info("SHAP explainer loaded successfully")
         except Exception as e:
             logger.warning(f"Error loading SHAP explainer: {e}")
             explainer = None
-        
+
         logger.info("Model and related objects loaded successfully")
-    
+
     except Exception as e:
         logger.error(f"Error loading model: {e}")
         raise
@@ -161,24 +161,24 @@ async def startup_event():
 def preprocess_input(patient: PatientFeatures) -> pd.DataFrame:
     """
     Preprocess the input data to match the model's expected format.
-    
+
     Args:
         patient: Patient features from the API request
-        
+
     Returns:
         DataFrame with preprocessed features
     """
     # Convert patient data to dictionary
     patient_dict = patient.dict()
-    
+
     # Create a DataFrame with a single row
     df = pd.DataFrame([patient_dict])
-    
+
     # Perform the same preprocessing steps as during training
-    
+
     # 1. Create derived features
     df['age_numeric'] = df['age']
-    
+
     # 2. Handle clinical notes if present
     if 'clinical_notes' in df.columns and df['clinical_notes'].iloc[0]:
         # In a real scenario, you would apply the same NLP processing
@@ -186,74 +186,86 @@ def preprocess_input(patient: PatientFeatures) -> pd.DataFrame:
         df['has_clinical_notes'] = 1
     else:
         df['has_clinical_notes'] = 0
-    
+
     # 3. Create interaction features
     df['age_med_interaction'] = df['age'] * df['num_medications']
-    
+
     # 4. Create time-based features
     df['los_group'] = pd.cut(
         df['time_in_hospital'],
         bins=[0, 3, 7, 14, float('inf')],
         labels=['short', 'medium', 'long', 'very_long']
     ).astype(str)
-    
+
     # One-hot encode the binned feature
     los_dummies = pd.get_dummies(df['los_group'], prefix='los')
     df = pd.concat([df, los_dummies], axis=1)
-    
+
     # 5. Ensure all required features are present
     # In a real scenario, you would load the feature list from training
     # and ensure all features are present with appropriate defaults
-    
+
     # For demonstration, we'll just select a subset of features
     selected_features = [
         'age_numeric', 'time_in_hospital', 'num_medications',
         'num_procedures', 'num_diagnoses', 'glucose_level',
         'insulin', 'has_clinical_notes', 'age_med_interaction'
     ]
-    
+
     # Add the los_group dummies
     for col in los_dummies.columns:
         selected_features.append(col)
-    
+
     # Select only features that exist in the DataFrame
     available_features = [f for f in selected_features if f in df.columns]
-    
+
     # Create the feature matrix
     X = df[available_features]
-    
-    # In a real scenario, you would apply the same scaling as during training
-    # For simplicity, we'll skip this step
-    
+
+    # Apply the same scaling as during training
+    try:
+        # Load the scaler
+        with open(FEATURES_DATA_DIR / 'scaler.pkl', 'rb') as f:
+            scaler = pickle.load(f)
+
+        # Get numerical columns (excluding any categorical columns that might have been one-hot encoded)
+        num_cols = X.select_dtypes(include=['number']).columns
+
+        # Apply scaling
+        X[num_cols] = scaler.transform(X[num_cols])
+        logger.info("Applied feature scaling to input data")
+    except Exception as e:
+        logger.warning(f"Could not apply scaling: {e}. Proceeding with unscaled features.")
+
     return X
 
 def get_explanation(X: pd.DataFrame) -> Dict[str, float]:
     """
     Generate explanation for the prediction.
-    
+
     Args:
         X: Preprocessed features
-        
+
     Returns:
         Dictionary mapping feature names to their importance values
     """
     if explainer is None:
         logger.warning("SHAP explainer not available. Returning empty explanation.")
         return {}
-    
+
     try:
         # Calculate SHAP values
         shap_values = explainer.shap_values(X)
-        
+
         # If shap_values is a list (for multi-class), take the values for class 1
         if isinstance(shap_values, list):
             shap_values = shap_values[1]
-        
+
         # Create a dictionary mapping feature names to their importance
         feature_importance = {}
         for i, col in enumerate(X.columns):
             feature_importance[col] = float(shap_values[0][i])
-        
+
         # Sort by absolute importance
         sorted_importance = {
             k: v for k, v in sorted(
@@ -262,10 +274,10 @@ def get_explanation(X: pd.DataFrame) -> Dict[str, float]:
                 reverse=True
             )
         }
-        
+
         # Return top 10 features
         return dict(list(sorted_importance.items())[:10])
-    
+
     except Exception as e:
         logger.error(f"Error generating explanation: {e}")
         return {}
@@ -303,10 +315,10 @@ async def get_model_info():
 async def predict(patient: PatientFeatures):
     """
     Predict readmission risk for a patient.
-    
+
     Args:
         patient: Patient features
-        
+
     Returns:
         Prediction response with risk score and explanation
     """
@@ -315,18 +327,18 @@ async def predict(patient: PatientFeatures):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model not loaded"
         )
-    
+
     try:
         # Generate a patient ID (in a real system, this would be provided)
         patient_id = f"P{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        
+
         # Preprocess input
         X = preprocess_input(patient)
-        
+
         # Make prediction
         risk_score = float(model.predict_proba(X)[0, 1])
         prediction = bool(risk_score >= 0.5)
-        
+
         # Determine risk level
         if risk_score < 0.3:
             risk_level = "Low"
@@ -334,10 +346,10 @@ async def predict(patient: PatientFeatures):
             risk_level = "Medium"
         else:
             risk_level = "High"
-        
+
         # Generate explanation
         explanation = get_explanation(X)
-        
+
         # Create response
         response = PredictionResponse(
             patient_id=patient_id,
@@ -348,12 +360,12 @@ async def predict(patient: PatientFeatures):
             model_version=model_info.get("model_name", "unknown"),
             explanation=explanation
         )
-        
+
         # Log prediction (in a real system, you would store this in a database)
         logger.info(f"Prediction for {patient_id}: {risk_score:.4f} ({risk_level})")
-        
+
         return response
-    
+
     except Exception as e:
         logger.error(f"Error making prediction: {e}")
         raise HTTPException(
