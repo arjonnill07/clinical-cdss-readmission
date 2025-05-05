@@ -1,0 +1,17 @@
+FROM nginx:alpine
+
+# Remove default nginx static assets
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy static assets from our frontend
+COPY frontend/index.html /usr/share/nginx/html/
+COPY frontend/assets/ /usr/share/nginx/html/assets/
+
+# Copy nginx configuration template
+COPY nginx.render.conf /etc/nginx/templates/default.conf.template
+
+# Expose port (Render will set this automatically)
+EXPOSE 80
+
+# Start Nginx server
+CMD ["nginx", "-g", "daemon off;"]
