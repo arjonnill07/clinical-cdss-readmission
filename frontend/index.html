@@ -92,50 +92,74 @@
                     </div>
                     <div class="card-body">
                         <form id="patient-form">
-                            <div class="mb-3">
-                                <label for="age" class="form-label">Age</label>
-                                <input type="number" class="form-control" id="age" required min="0" max="120">
+                            <div class="alert alert-info mb-4">
+                                <h6>Input Guidelines</h6>
+                                <p class="mb-0">All fields marked with * are required. Please enter accurate clinical information for the best prediction results.</p>
                             </div>
+
                             <div class="mb-3">
-                                <label for="gender" class="form-label">Gender</label>
+                                <label for="age" class="form-label">Age* <i class="text-muted">(years)</i></label>
+                                <input type="number" class="form-control" id="age" required min="0" max="120">
+                                <div class="form-text">Valid range: 0-120 years</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="gender" class="form-label">Gender*</label>
                                 <select class="form-select" id="gender" required>
                                     <option value="">Select gender</option>
                                     <option value="Male">Male</option>
                                     <option value="Female">Female</option>
                                     <option value="Other">Other</option>
                                 </select>
+                                <div class="form-text">Select the patient's gender</div>
                             </div>
+
                             <div class="mb-3">
-                                <label for="time_in_hospital" class="form-label">Length of Stay (days)</label>
-                                <input type="number" class="form-control" id="time_in_hospital" required min="0">
+                                <label for="time_in_hospital" class="form-label">Length of Stay* <i class="text-muted">(days)</i></label>
+                                <input type="number" class="form-control" id="time_in_hospital" required min="1" max="365">
+                                <div class="form-text">Number of days the patient stayed in the hospital (1-365)</div>
                             </div>
+
                             <div class="mb-3">
-                                <label for="num_medications" class="form-label">Number of Medications</label>
-                                <input type="number" class="form-control" id="num_medications" required min="0">
+                                <label for="num_medications" class="form-label">Number of Medications*</label>
+                                <input type="number" class="form-control" id="num_medications" required min="0" max="100">
+                                <div class="form-text">Total number of medications prescribed to the patient (0-100)</div>
                             </div>
+
                             <div class="mb-3">
-                                <label for="num_procedures" class="form-label">Number of Procedures</label>
-                                <input type="number" class="form-control" id="num_procedures" required min="0">
+                                <label for="num_procedures" class="form-label">Number of Procedures*</label>
+                                <input type="number" class="form-control" id="num_procedures" required min="0" max="50">
+                                <div class="form-text">Number of procedures performed during hospitalization (0-50)</div>
                             </div>
+
                             <div class="mb-3">
-                                <label for="num_diagnoses" class="form-label">Number of Diagnoses</label>
-                                <input type="number" class="form-control" id="num_diagnoses" required min="0">
+                                <label for="num_diagnoses" class="form-label">Number of Diagnoses*</label>
+                                <input type="number" class="form-control" id="num_diagnoses" required min="1" max="50">
+                                <div class="form-text">Total number of diagnoses entered for this patient (1-50)</div>
                             </div>
+
                             <div class="mb-3">
-                                <label for="glucose_level" class="form-label">Glucose Level (mg/dL)</label>
-                                <input type="number" class="form-control" id="glucose_level" required>
+                                <label for="glucose_level" class="form-label">Glucose Level* <i class="text-muted">(mg/dL)</i></label>
+                                <input type="number" class="form-control" id="glucose_level" required min="40" max="500">
+                                <div class="form-text">Blood glucose level in mg/dL (normal fasting: 70-100, typical range: 40-500)</div>
                             </div>
+
                             <div class="mb-3">
-                                <label for="a1c_level" class="form-label">A1C Level (%)</label>
-                                <input type="number" class="form-control" id="a1c_level" step="0.1">
+                                <label for="a1c_level" class="form-label">A1C Level <i class="text-muted">(%)</i></label>
+                                <input type="number" class="form-control" id="a1c_level" step="0.1" min="4" max="14">
+                                <div class="form-text">Hemoglobin A1C percentage (normal: 4-5.6%, prediabetes: 5.7-6.4%, diabetes: 6.5%+)</div>
                             </div>
+
                             <div class="mb-3 form-check">
                                 <input type="checkbox" class="form-check-input" id="insulin">
-                                <label class="form-check-label" for="insulin">Insulin Prescribed</label>
+                                <label class="form-check-label" for="insulin">Insulin Prescribed*</label>
+                                <div class="form-text">Check if the patient is currently prescribed insulin</div>
                             </div>
+
                             <div class="mb-3">
                                 <label for="clinical_notes" class="form-label">Clinical Notes</label>
-                                <textarea class="form-control" id="clinical_notes" rows="3"></textarea>
+                                <textarea class="form-control" id="clinical_notes" rows="3" placeholder="Enter any relevant clinical notes about the patient's condition"></textarea>
+                                <div class="form-text">Include relevant information about diabetes management, complications, or other factors that may affect readmission risk</div>
                             </div>
                             <button type="submit" class="btn btn-primary">Predict Readmission Risk</button>
                         </form>
