@@ -4,8 +4,8 @@ setup(
     name="clinical-cdss-readmission",
     version="0.1.0",
     description="AI-Powered Clinical Decision Support System for Predicting Patient Readmissions",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Arjon Golder",
+    author_email="arjon16@cse.pstu.ac.bd",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
