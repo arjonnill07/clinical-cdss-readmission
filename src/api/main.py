@@ -30,8 +30,11 @@ from pydantic import BaseModel, Field, validator
 import shap
 from fastapi import FastAPI, HTTPException, Depends, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 import uvicorn
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -54,9 +57,9 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this to specific origins
+    allow_origins=["http://localhost:3000"],  # Frontend development server
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -133,18 +136,27 @@ async def startup_event():
             X_sample = shap_data['X_sample']
 
             # Create SHAP explainer based on model type
+            model_type = str(type(model))
+            logger.info(f"Creating SHAP explainer for model type: {model_type}")
+
             if hasattr(model, 'predict_proba'):
-                # For tree-based models
-                if hasattr(model, 'estimators_') or 'XGB' in str(type(model)):
+                # For tree-based models (Random Forest, Gradient Boosting, XGBoost)
+                if ('GradientBoostingClassifier' in model_type or
+                    'RandomForestClassifier' in model_type or
+                    'XGBClassifier' in model_type or
+                    hasattr(model, 'estimators_')):
+                    logger.info("Using TreeExplainer for tree-based model")
                     explainer = shap.TreeExplainer(model)
                 else:
                     # For other models
+                    logger.info("Using KernelExplainer with predict_proba")
                     explainer = shap.KernelExplainer(
                         model.predict_proba,
                         shap.sample(X_sample, 100),
                         link="logit"
                     )
             else:
+                logger.info("Using KernelExplainer with predict")
                 explainer = shap.KernelExplainer(model.predict, shap.sample(X_sample, 100))
 
             logger.info("SHAP explainer loaded successfully")
@@ -179,6 +191,13 @@ def preprocess_input(patient: PatientFeatures) -> pd.DataFrame:
     # 1. Create derived features
     df['age_numeric'] = df['age']
 
+    # 1.1 Encode categorical variables
+    if 'gender' in df.columns:
+        # Map gender to numeric values (similar to what was done in training)
+        gender_mapping = {'Male': 0, 'Female': 1, 'Other': 2}
+        df['gender'] = df['gender'].map(gender_mapping).fillna(0).astype(int)
+        logger.info(f"Encoded gender: {df['gender'].iloc[0]}")
+
     # 2. Handle clinical notes if present
     if 'clinical_notes' in df.columns and df['clinical_notes'].iloc[0]:
         # In a real scenario, you would apply the same NLP processing
@@ -202,22 +221,49 @@ def preprocess_input(patient: PatientFeatures) -> pd.DataFrame:
     df = pd.concat([df, los_dummies], axis=1)
 
     # 5. Ensure all required features are present
-    # In a real scenario, you would load the feature list from training
-    # and ensure all features are present with appropriate defaults
+    # Load the feature list from the trained model
+    try:
+        # Try to get feature names from model info
+        if feature_names and len(feature_names) > 0:
+            selected_features = feature_names
+            logger.info(f"Using {len(selected_features)} features from model info")
+        else:
+            # Fall back to a subset of features if model info is not available
+            selected_features = [
+                'age_numeric', 'time_in_hospital', 'num_medications',
+                'num_procedures', 'num_diagnoses', 'glucose_level',
+                'insulin', 'has_clinical_notes', 'age_med_interaction'
+            ]
 
-    # For demonstration, we'll just select a subset of features
-    selected_features = [
-        'age_numeric', 'time_in_hospital', 'num_medications',
-        'num_procedures', 'num_diagnoses', 'glucose_level',
-        'insulin', 'has_clinical_notes', 'age_med_interaction'
-    ]
+            # Add the los_group dummies
+            for col in los_dummies.columns:
+                selected_features.append(col)
 
-    # Add the los_group dummies
-    for col in los_dummies.columns:
-        selected_features.append(col)
+            logger.warning("Using fallback feature list as model feature names not available")
+    except Exception as e:
+        # Fall back to a subset of features if there's an error
+        selected_features = [
+            'age_numeric', 'time_in_hospital', 'num_medications',
+            'num_procedures', 'num_diagnoses', 'glucose_level',
+            'insulin', 'has_clinical_notes', 'age_med_interaction'
+        ]
+
+        # Add the los_group dummies
+        for col in los_dummies.columns:
+            selected_features.append(col)
+
+        logger.warning(f"Error getting model features: {e}. Using fallback feature list.")
 
     # Select only features that exist in the DataFrame
     available_features = [f for f in selected_features if f in df.columns]
+
+    # Check for missing features and add them with default values
+    missing_features = [f for f in selected_features if f not in df.columns]
+    if missing_features:
+        logger.warning(f"Missing features: {missing_features}. Adding with default values of 0.")
+        for feature in missing_features:
+            df[feature] = 0
+        available_features = selected_features
 
     # Create the feature matrix
     X = df[available_features]
