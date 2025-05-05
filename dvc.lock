@@ -1,0 +1,38 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python src/data/prepare.py
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: 022b00e2d89486028300d929ffc4e593.dir
+      size: 19161930
+      nfiles: 2
+    - path: src/data/prepare.py
+      hash: md5
+      md5: 2b23efbcb93a06497b83c953ee337acd
+      size: 6095
+    outs:
+    - path: data/processed
+      hash: md5
+      md5: 28b45b94145ffa62013ae3b9f6a7fee9.dir
+      size: 12379399
+      nfiles: 3
+  featurize:
+    cmd: python src/features/build_features.py
+    deps:
+    - path: data/processed
+      hash: md5
+      md5: 28b45b94145ffa62013ae3b9f6a7fee9.dir
+      size: 12379399
+      nfiles: 3
+    - path: src/features/build_features.py
+      hash: md5
+      md5: 20939873cadad17f85ff15210369a9c5
+      size: 11742
+    outs:
+    - path: data/features
+      hash: md5
+      md5: 0319dc767d3196e034afc222745e9966.dir
+      size: 113808939
+      nfiles: 9
