@@ -135,13 +135,16 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
         n_jobs=-1
     )
 
-    # Fit the model
-    random_search.fit(
-        X_train, y_train,
-        eval_set=[(X_val, y_val)],
-        early_stopping_rounds=20,
-        verbose=True
-    )
+    # Define a callable to pass to fit_params for early stopping
+    fit_params = {
+        "eval_set": [(X_val, y_val)],
+        "eval_metric": "auc",
+        "early_stopping_rounds": 20,
+        "verbose": True
+    }
+
+    # Fit the model with fit_params
+    random_search.fit(X_train, y_train, **fit_params)
 
     # Get the best model and parameters
     best_model = random_search.best_estimator_
