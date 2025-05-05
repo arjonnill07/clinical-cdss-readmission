@@ -122,8 +122,15 @@ def preprocess_data(data_path):
     # Create target variable (readmitted within 30 days)
     logger.info("Creating target variable")
     if 'readmitted' in df.columns:
+        # Print unique values and their counts for debugging
+        logger.info(f"Unique values in 'readmitted' column: {df['readmitted'].unique()}")
+        logger.info(f"Value counts in 'readmitted' column: {df['readmitted'].value_counts().to_dict()}")
+
         # Assuming 'readmitted' has values like '<30', '>30', 'NO'
         df['readmitted_30d'] = df['readmitted'].apply(lambda x: 1 if x == '<30' else 0)
+
+        # Print the resulting target distribution
+        logger.info(f"Target variable distribution: {df['readmitted_30d'].value_counts().to_dict()}")
 
     logger.info(f"Preprocessed data shape: {df.shape}")
     return df
