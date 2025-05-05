@@ -22,6 +22,8 @@ evidently>=0.1.50
 fastapi>=0.68.0
 uvicorn>=0.15.0
 pydantic>=1.8.0
+gunicorn>=20.1.0
+httpx>=0.23.0  # For healthchecks
 
 # Monitoring
 prometheus-client>=0.11.0
