@@ -236,6 +236,9 @@
                             <h6>Clinical Recommendation</h6>
                             <p id="recommendation">Consider follow-up appointment within 2 weeks and medication review.</p>
                         </div>
+                        <div class="d-flex justify-content-center mt-4">
+                            <button id="new-prediction" class="btn btn-outline-primary">Make Another Prediction</button>
+                        </div>
                     </div>
                     <div class="card-footer text-muted">
                         <small>Prediction made on <span id="prediction-date">May 5, 2025</span> using model version <span id="model-version">gradient_boosting</span></small>
@@ -568,9 +571,29 @@
                 }
             }
 
-            // Function to clear form
+            // Function to clear form and prepare for new submission
             function clearForm() {
+                console.log('Clearing form and preparing for new submission');
+
+                // Reset the form
                 patientForm.reset();
+
+                // Make sure the submit button is enabled
+                const submitButton = patientForm.querySelector('button[type="submit"]');
+                submitButton.disabled = false;
+                submitButton.textContent = 'Predict Readmission Risk';
+
+                // Pre-fill with sample data for demo purposes
+                document.getElementById('age').value = 65;
+                document.getElementById('gender').value = 'Male';
+                document.getElementById('time_in_hospital').value = 5;
+                document.getElementById('num_medications').value = 10;
+                document.getElementById('num_procedures').value = 3;
+                document.getElementById('num_diagnoses').value = 7;
+                document.getElementById('glucose_level').value = 180;
+                document.getElementById('a1c_level').value = 7.5;
+                document.getElementById('insulin').checked = true;
+                document.getElementById('clinical_notes').value = 'Patient has type 2 diabetes with poor glucose control.';
             }
 
             // Function to show comparison view
@@ -647,16 +670,19 @@
                 });
             }
 
-            // Handle form submission
-            patientForm.addEventListener('submit', async function(e) {
+            // Create a separate function for form submission to avoid closure issues
+            async function handleFormSubmit(e) {
+                console.log('Form submission handler called');
                 e.preventDefault();
 
                 try {
                     // Show loading state
-                    const submitButton = this.querySelector('button[type="submit"]');
+                    const submitButton = patientForm.querySelector('button[type="submit"]');
+                    console.log('Submit button before:', submitButton.disabled);
                     const originalButtonText = submitButton.textContent;
                     submitButton.textContent = 'Processing...';
                     submitButton.disabled = true;
+                    console.log('Submit button during processing:', submitButton.disabled);
 
                     // Gather form data
                     const formData = getFormData();
@@ -685,11 +711,15 @@
                     alert(`Error making prediction: ${error.message}`);
                 } finally {
                     // Restore button state
-                    const submitButton = this.querySelector('button[type="submit"]');
+                    const submitButton = patientForm.querySelector('button[type="submit"]');
                     submitButton.textContent = originalButtonText;
                     submitButton.disabled = false;
+                    console.log('Submit button after:', submitButton.disabled);
                 }
-            });
+            }
+
+            // Handle form submission
+            patientForm.addEventListener('submit', handleFormSubmit);
 
             // Event listeners for buttons
             clearFormButton.addEventListener('click', clearForm);
@@ -701,17 +731,17 @@
                 updateHistoryUI();
             });
 
-            // For demo purposes, pre-fill the form with sample data
-            document.getElementById('age').value = 65;
-            document.getElementById('gender').value = 'Male';
-            document.getElementById('time_in_hospital').value = 5;
-            document.getElementById('num_medications').value = 10;
-            document.getElementById('num_procedures').value = 3;
-            document.getElementById('num_diagnoses').value = 7;
-            document.getElementById('glucose_level').value = 180;
-            document.getElementById('a1c_level').value = 7.5;
-            document.getElementById('insulin').checked = true;
-            document.getElementById('clinical_notes').value = 'Patient has type 2 diabetes with poor glucose control.';
+            // Add event listener for the "Make Another Prediction" button
+            document.getElementById('new-prediction').addEventListener('click', function() {
+                console.log('Make Another Prediction button clicked');
+                // Clear the form and prepare for a new submission
+                clearForm();
+                // Scroll to the form
+                patientForm.scrollIntoView({ behavior: 'smooth' });
+            });
+
+            // Initialize the form with sample data
+            clearForm();
         });
     </script>
 </body>
