@@ -114,12 +114,7 @@ def preprocess_data(data_path):
     for col in num_cols:
         df[col].fillna(df[col].median(), inplace=True)
 
-    # Encode categorical variables
-    logger.info("Encoding categorical variables")
-    for col in cat_cols:
-        df[col] = pd.Categorical(df[col]).codes
-
-    # Create target variable (readmitted within 30 days)
+    # Create target variable (readmitted within 30 days) BEFORE encoding
     logger.info("Creating target variable")
     if 'readmitted' in df.columns:
         # Print unique values and their counts for debugging
@@ -131,6 +126,12 @@ def preprocess_data(data_path):
 
         # Print the resulting target distribution
         logger.info(f"Target variable distribution: {df['readmitted_30d'].value_counts().to_dict()}")
+
+    # Encode categorical variables AFTER creating target
+    logger.info("Encoding categorical variables")
+    for col in cat_cols:
+        if col != 'readmitted':  # Don't encode the original readmitted column
+            df[col] = pd.Categorical(df[col]).codes
 
     logger.info(f"Preprocessed data shape: {df.shape}")
     return df
