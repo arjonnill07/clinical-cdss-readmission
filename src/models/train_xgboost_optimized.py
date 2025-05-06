@@ -1,25 +1,21 @@
 """
-Model training script for the Clinical CDSS Readmission project.
+Optimized XGBoost model training script for the Clinical CDSS Readmission project.
 
 This script:
 1. Loads the feature matrices
-2. Trains an optimized XGBoost model for predicting 30-day readmission risk
-3. Performs advanced hyperparameter tuning with RandomizedSearchCV
-4. Uses early stopping to prevent overfitting
-5. Implements StratifiedKFold for better cross-validation
-6. Utilizes DMatrix for faster training
-7. Tracks experiments with MLflow
-8. Generates comprehensive model explanations with SHAP
-9. Saves the best model
+2. Performs feature selection using mutual information
+3. Trains an optimized XGBoost model with advanced hyperparameter tuning
+4. Implements threshold optimization for better F1 score
+5. Generates comprehensive model explanations with SHAP
+6. Tracks experiments with MLflow
+7. Saves the optimized model
 
 Theory:
-- XGBoost performs well for tabular clinical data
-- Advanced hyperparameter tuning improves model performance
-- Early stopping prevents overfitting
-- StratifiedKFold maintains class distribution in imbalanced datasets
-- DMatrix provides faster training for XGBoost
-- Explainability is essential for clinical decision support
-- MLflow helps track experiments and reproduce results
+- Feature selection improves model performance and interpretability
+- Advanced hyperparameter tuning finds optimal model configuration
+- Threshold optimization addresses class imbalance issues
+- SHAP values provide detailed model explanations
+- MLflow tracks experiments for reproducibility
 """
 
 import pandas as pd
@@ -30,9 +26,9 @@ import pickle
 import json
 import mlflow
 import mlflow.sklearn
-import xgboost
-from xgboost import XGBClassifier, DMatrix, plot_importance
+from xgboost import XGBClassifier, plot_importance
 from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
+from sklearn.feature_selection import mutual_info_classif, SelectKBest
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     roc_auc_score, confusion_matrix, classification_report
@@ -91,31 +87,25 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
     # Set up MLflow tracking
     mlflow.set_experiment("clinical-cdss-readmission")
 
-    # Note: We'll use pandas DataFrames directly with XGBClassifier
-    # This is more compatible with scikit-learn's RandomizedSearchCV
-
     # Calculate class imbalance ratio for better scale_pos_weight values
     neg_pos_ratio = np.sum(y_train == 0) / np.sum(y_train == 1)
     logger.info(f"Class imbalance ratio (negative/positive): {neg_pos_ratio:.2f}")
-
+    
     # Feature selection using mutual information
-    from sklearn.feature_selection import mutual_info_classif, SelectKBest
-
-    # Select top features based on mutual information
     logger.info("Performing feature selection using mutual information")
     k_best = min(40, X_train.shape[1])  # Select top 40 features or all if less
     selector = SelectKBest(mutual_info_classif, k=k_best)
     X_train_selected = selector.fit_transform(X_train, y_train)
     X_val_selected = selector.transform(X_val)
-
+    
     # Get selected feature names
     selected_features = X_train.columns[selector.get_support()]
     logger.info(f"Selected {len(selected_features)} features: {', '.join(selected_features[:10])}...")
-
+    
     # Use the selected features
     X_train = X_train[selected_features]
     X_val = X_val[selected_features]
-
+    
     # Define expanded hyperparameter search space for RandomizedSearchCV
     param_dist = {
         'n_estimators': [300, 500, 700, 1000],
@@ -145,24 +135,24 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
 
     # Define custom scoring function that balances AUC and F1
     from sklearn.metrics import make_scorer, f1_score, roc_auc_score
-
+    
     def custom_score(y_true, y_pred_proba):
         # Convert probabilities to binary predictions using optimal threshold
         # For imbalanced datasets, 0.5 is often not the best threshold
         threshold = 0.3  # Lower threshold to increase sensitivity
         y_pred = (y_pred_proba >= threshold).astype(int)
-
+        
         # Calculate F1 score
         f1 = f1_score(y_true, y_pred)
-
+        
         # Calculate AUC
         auc = roc_auc_score(y_true, y_pred_proba)
-
+        
         # Weighted combination (emphasize F1 more for imbalanced data)
         return 0.4 * auc + 0.6 * f1
-
+    
     custom_scorer = make_scorer(custom_score, needs_proba=True)
-
+    
     # Set up RandomizedSearchCV with more iterations and custom scoring
     logger.info("Performing advanced hyperparameter tuning with RandomizedSearchCV")
     random_search = RandomizedSearchCV(
@@ -185,7 +175,7 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
         "eval_metric": "logloss",
         "verbose": True
     }
-
+    
     # Fit the model with fit_params
     logger.info("Fitting model with early stopping...")
     random_search.fit(X_train, y_train, **fit_params)
@@ -193,27 +183,27 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
     # Get the best model and parameters
     best_model = random_search.best_estimator_
     best_params = random_search.best_params_
-
+    
     # Find optimal threshold for F1 score
     logger.info("Finding optimal classification threshold...")
     y_pred_proba = best_model.predict_proba(X_val)[:, 1]
-
+    
     # Try different thresholds and find the one that maximizes F1
     thresholds = np.arange(0.1, 0.9, 0.05)
     f1_scores = []
-
+    
     for threshold in thresholds:
         y_pred_threshold = (y_pred_proba >= threshold).astype(int)
         f1_scores.append(f1_score(y_val, y_pred_threshold))
-
+    
     # Find the threshold that maximizes F1
     optimal_idx = np.argmax(f1_scores)
     optimal_threshold = thresholds[optimal_idx]
     logger.info(f"Optimal threshold: {optimal_threshold:.2f} with F1: {f1_scores[optimal_idx]:.4f}")
-
+    
     # Apply optimal threshold
     y_pred = (y_pred_proba >= optimal_threshold).astype(int)
-
+    
     # Log the training process with MLflow
     with mlflow.start_run(run_name="xgboost_optimized_advanced"):
         # Log model parameters
@@ -224,17 +214,17 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
             "selected_features": len(selected_features),
             "optimal_threshold": optimal_threshold
         })
-
+        
         # Log best parameters
         mlflow.log_params(best_params)
-
+        
         # Calculate metrics with optimal threshold
         accuracy = accuracy_score(y_val, y_pred)
         precision = precision_score(y_val, y_pred)
         recall = recall_score(y_val, y_pred)
         f1 = f1_score(y_val, y_pred)
         auc = roc_auc_score(y_val, y_pred_proba)
-
+        
         # Log metrics
         mlflow.log_metrics({
             "accuracy": accuracy,
@@ -243,7 +233,7 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
             "f1": f1,
             "auc": auc
         })
-
+        
         # Generate and log confusion matrix
         cm = confusion_matrix(y_val, y_pred)
         cm_dict = {
@@ -253,10 +243,10 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
             "true_positives": cm[1, 1]
         }
         mlflow.log_dict(cm_dict, "confusion_matrix.json")
-
+        
         # Log the model
         mlflow.sklearn.log_model(best_model, "xgboost_optimized_advanced")
-
+        
         # Generate feature importance plot
         plt.figure(figsize=(12, 8))
         plot_importance(best_model, max_num_features=20)
@@ -264,10 +254,10 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
         importance_path = MODELS_DIR / 'feature_importance.png'
         plt.savefig(importance_path)
         plt.close()
-
+        
         # Log feature importance plot
         mlflow.log_artifact(str(importance_path))
-
+        
         # Plot threshold vs F1 score
         plt.figure(figsize=(10, 6))
         plt.plot(thresholds, f1_scores, marker='o')
@@ -281,30 +271,30 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
         threshold_path = MODELS_DIR / 'threshold_optimization.png'
         plt.savefig(threshold_path)
         plt.close()
-
+        
         # Log threshold optimization plot
         mlflow.log_artifact(str(threshold_path))
-
+        
         # Create a custom model object that includes the optimal threshold
         class OptimizedXGBoostClassifier:
             def __init__(self, model, threshold):
                 self.model = model
                 self.threshold = threshold
-
+                
             def predict(self, X):
                 proba = self.model.predict_proba(X)[:, 1]
                 return (proba >= self.threshold).astype(int)
-
+                
             def predict_proba(self, X):
                 return self.model.predict_proba(X)
-
+        
         # Create the optimized model
         optimized_model = OptimizedXGBoostClassifier(best_model, optimal_threshold)
-
+        
         # Save the optimized model
         with open(MODELS_DIR / 'optimized_model.pkl', 'wb') as f:
             pickle.dump(optimized_model, f)
-
+        
         logger.info(f"XGBoost Advanced - AUC: {auc:.4f}, F1: {f1:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}")
 
     # Save results
@@ -318,10 +308,10 @@ def train_xgboost_model(X_train, y_train, X_val, y_val):
             "best_params": best_params
         }
     }
-
+    
     with open(MODELS_DIR / 'training_results.json', 'w') as f:
         json.dump(results_dict, f, indent=4)
-
+    
     return best_model
 
 def generate_explanations(model, X_train, feature_names):
@@ -377,19 +367,19 @@ def generate_explanations(model, X_train, feature_names):
     # Create directory for SHAP visualizations
     shap_dir = MODELS_DIR / 'shap_explanations'
     shap_dir.mkdir(exist_ok=True)
-
+    
     # Generate SHAP summary plot
     plt.figure(figsize=(12, 10))
     shap.summary_plot(shap_values, X_sample, feature_names=feature_names, show=False)
     plt.tight_layout()
     plt.savefig(shap_dir / 'shap_summary.png')
     plt.close()
-
+    
     # Generate SHAP dependence plots for top features
     # Get mean absolute SHAP values for each feature
     mean_abs_shap = np.abs(shap_values).mean(axis=0)
     top_indices = np.argsort(mean_abs_shap)[-5:]  # Top 5 features
-
+    
     for idx in top_indices:
         feature_name = feature_names[idx]
         plt.figure(figsize=(12, 8))
@@ -398,7 +388,7 @@ def generate_explanations(model, X_train, feature_names):
         plt.tight_layout()
         plt.savefig(shap_dir / f'shap_dependence_{feature_name}.png')
         plt.close()
-
+    
     # Generate SHAP force plot for a sample of patients
     # This shows how each feature contributes to the prediction for individual patients
     sample_indices = np.random.choice(X_sample.shape[0], min(10, X_sample.shape[0]), replace=False)
@@ -410,7 +400,7 @@ def generate_explanations(model, X_train, feature_names):
         show=False
     )
     shap.save_html(str(shap_dir / 'shap_force_plot.html'), force_plot)
-
+    
     logger.info(f"SHAP explanations generated and saved to {shap_dir}")
     return shap_values
 
